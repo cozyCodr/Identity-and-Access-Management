@@ -1,5 +1,5 @@
 import json
-from flask import request, _request_ctx_stack
+from flask import request, abort, _request_ctx_stack
 from functools import wraps
 from jose import jwt
 from urllib.request import urlopen
@@ -10,12 +10,6 @@ ALGORITHMS = ['RS256']
 API_AUDIENCE = 'coffee'
 
 # AuthError Exception
-'''
-AuthError Exception
-A standardized way to communicate auth failure modes
-'''
-
-
 class AuthError(Exception):
     def __init__(self, error, status_code):
         self.error = error
@@ -24,67 +18,59 @@ class AuthError(Exception):
 
 # Auth Header
 def get_token_auth_header():
-    """Obtains the Access Token from the Authorization Header
     """
-    auth = request.headers.get('Authorization', None)
-    # Check if authorization header is available
-    if not auth:
+    check if token header contains authorization,
+    return token
+    """
+    authorized = request.headers.get('Authorization', None)
+    if not authorized:
         raise AuthError({
             'code': 'authorization_header_missing',
-            'description': 'Authorization header is unavailable'
+            'description': 'Authorization header is expected.'
         }, 401)
-    parts = auth.split()
 
-    # Check if token is prefixed with bearer
+    parts = authorized.split()
     if parts[0].lower() != 'bearer':
         raise AuthError({
             'code': 'invalid_header',
-            'description': 'Authorization is without "Bearer".'
+            'description': 'Authorization header must start with "Bearer".'
         }, 401)
 
-    # Check if both bearer and token and are in authorization header
     elif len(parts) == 1:
         raise AuthError({
             'code': 'invalid_header',
-            'description': 'Both token and bearer must be available'
+            'description': 'Token not found.'
         }, 401)
 
     elif len(parts) > 2:
         raise AuthError({
             'code': 'invalid_header',
-            'description': 'Invalid authorization header'
+            'description': 'Authorization header must be bearer token.'
         }, 401)
 
-    token = parts[1]
-
-    return token
+    return parts[1]
 
 
-# Check Permissions
 def check_permissions(permission, payload):
     if 'permissions' not in payload:
-        raise AuthError({
-            'code': 'invalid_claims',
-            'description': 'Permissions not found'
-        }, 400)
+        abort(400)
 
     if permission not in payload['permissions']:
-        raise AuthError({
-            'code': 'unauthorized',
-            'description': 'Permissions not applicaple to current context'
-        }, 403)
+        abort(403)
 
     return True
 
 
-# Verify JWT
 def verify_decode_jwt(token):
-    url = urlopen(f'https://{AUTH0_DOMAIN}/.well-known/jwks.json')
-    jwks = json.loads(url.read())
+    # GET THE PUBLIC KEY FROM AUTH0
+    jsonurl = urlopen(f'https://{AUTH0_DOMAIN}/.well-known/jwks.json')
+    jwks = json.loads(jsonurl.read())
+
+    # GET THE DATA IN THE HEADER
     unverified_header = jwt.get_unverified_header(token)
 
+    # CHOOSE OUR KEY
     rsa_key = {}
-
     if 'kid' not in unverified_header:
         raise AuthError({
             'code': 'invalid_header',
@@ -101,9 +87,10 @@ def verify_decode_jwt(token):
                 'e': key['e']
             }
 
+    # Finally, verify!!!
     if rsa_key:
-
         try:
+            # USE THE KEY TO VALIDATE THE JWT
             payload = jwt.decode(
                 token,
                 rsa_key,
@@ -140,9 +127,17 @@ def requires_auth(permission=''):
     def requires_auth_decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            token = get_token_auth_header()
-            payload = verify_decode_jwt(token)
+            jwt = get_token_auth_header()
+            try:
+                payload = verify_decode_jwt(jwt)
+            except:
+                raise AuthError({
+                    'code': 'unauthorized',
+                    'description': 'Unauthorized'
+                }, 401)
+
             check_permissions(permission, payload)
+
             return f(payload, *args, **kwargs)
 
         return wrapper

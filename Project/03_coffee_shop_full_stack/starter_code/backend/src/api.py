@@ -53,13 +53,13 @@ def get_drinks_detail(payload):
 
 @app.route('/drinks', methods=['POST'])
 @requires_auth('post:drinks')
-def create_drink(payload):
+def create_drink(jwt):
     body = request.get_json()
 
     try:
-        drink_name = body.get('title', None)
-        drink_recipe = json.dumps(body.get('recipe', None))
-        drink = Drink(title=drink_name, recipe=drink_recipe)
+        new_title = body.get('title', None)
+        new_recipe = json.dumps(body.get('recipe', None))
+        drink = Drink(title=new_title, recipe=new_recipe)
         drink.insert()
 
         drink = drink.long()
@@ -74,17 +74,15 @@ def create_drink(payload):
 
 @app.route('/drinks/<int:id>', methods=['PATCH'])
 @requires_auth('patch:drinks')
-def edit_drink(jwt, id):
+def edit_drink(payload, id):
     body = request.get_json()
     drink = Drink.query.filter(Drink.id == id).one_or_none()
 
     if not drink:
         abort(404)
     try:
-        req_title = body.get('title', None)
-        req_recipe = json.dumps(body.get('recipe', None))
-        drink.title = req_title
-        drink.recipe = req_recipe
+        drink.title = body.get('title', None)
+        drink.recipe = json.dumps(body.get('recipe', None))
         drink.update()
         drinks = []
         drinks.append(drink.long())
@@ -99,7 +97,7 @@ def edit_drink(jwt, id):
 
 @app.route('/drinks/<int:id>', methods=['DELETE'])
 @requires_auth('delete:drinks')
-def delete_drink(jwt, id):
+def delete_drink(payload, id):
     drink = Drink.query.get(id)
     if drink:
         drink.delete()
@@ -112,6 +110,57 @@ def delete_drink(jwt, id):
         abort(404)
 
 
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({
+        'success': False,
+        'error': 400,
+        'message': 'bad request'
+    }), 400
+
+
+@app.errorhandler(401)
+def unauthorized(error):
+    return jsonify({
+        'success': False,
+        'error': 401,
+        'message': 'unauthorized '
+    }), 401
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    return jsonify({
+        'success': False,
+        'error': 403,
+        'message': 'forbidden'
+    }), 403
+
+
+'''
+@TODO:DONE implement error handler for 404
+    error handler should conform to general task above
+'''
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        'success': False,
+        'error': 404,
+        'message': 'resourse not found'
+    }), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({
+        'success': False,
+        'error': 405,
+        'message': 'method not allowed'
+    }), 405
+
+
 @app.errorhandler(422)
 def unprocessable(error):
     return jsonify({
@@ -121,19 +170,25 @@ def unprocessable(error):
     }), 422
 
 
-@app.errorhandler(404)
-def resource_not_found(error):
+@app.errorhandler(500)
+def internal_server_error(error):
     return jsonify({
         'success': False,
-        'error': 404,
-        'message': 'resource not found'
-    }), 404
+        'error': 500,
+        'message': 'internal server errors'
+    }), 500
+
+
+'''
+@TODO implement error handler for AuthError
+    error handler should conform to general task above
+'''
 
 
 @app.errorhandler(AuthError)
-def unauthenticated(error):
+def Auth_Error(error):
     return jsonify({
         'success': False,
         'error': error.status_code,
-        'message': error.error
-    })
+        'message': error.error['description']
+    }), error.status_code
